@@ -24,20 +24,16 @@ data = ''
 while True:
     data = client_socket.recv(1024)
 
-    if data.endswith(u'\r\n'):
-        print(data)
+    if data.endswith('\r\n'.encode()):
+        print(data.decode('utf-8'))
+
+        if data.endswith('Please submit auction request:\r\n'.encode()):
+            auction_request = input()
+
+            # Send message over the socket
+            client_socket.send((auction_request + '\r\n').encode())
+
         data = ''
-
-
-# Prompt the user for input sentence
-# sentence = raw_input('Input lowercase sentence: ')
-
-# # Send message over the socket
-# client_socket.send(sentence)
-
-# # Receive from socket
-# modified_sentence = client_socket.recv(1024)
-# print('From TCP server: ' + modified_sentence)
 
 # Close the socket
 client_socket.close()
