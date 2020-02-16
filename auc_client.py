@@ -2,6 +2,11 @@ import socket
 import sys
 
 
+CONNECTION_CLOSE_MSGS = [
+    'Server busy!\r\n'
+    'Bidding on-going!\r\n'
+]
+
 if len(sys.argv) < 3:
     print('Please specify the server host and port to connect.')
     sys.exit()
@@ -17,17 +22,18 @@ except ValueError:
 # Create UDP socket
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.connect((host, port))
-print('Socket created')
 
 data = ''
 
 while True:
     data = client_socket.recv(1024)
 
-    if data.endswith('\r\n'.encode()):
+    if data.endswith(b'\r\n'):
         print(data.decode('utf-8'))
 
-        if data.endswith('Please submit auction request:\r\n'.encode()):
+        if any(data.endswith(msg.encode()) for msg in CONNECTION_CLOSE_MSGS):
+            break
+        elif data.endswith(b'Please submit auction request:\r\n') or data.endswith(b'Server: invalid auction request.\r\n'):
             auction_request = input()
 
             # Send message over the socket

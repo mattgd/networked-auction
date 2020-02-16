@@ -1,5 +1,3 @@
-import threading
-
 import auction
 from client import Client
 import status
@@ -8,6 +6,9 @@ import status
 class Seller(Client):
     def run(self):
         super().run()
+
+        # Send the client their role
+        self.send_msg('Your role is: [Seller]\r\n')
         self.send_msg('Please submit auction request:\r\n')
         
         while True:
@@ -45,9 +46,9 @@ class Seller(Client):
                             self.send_msg('Auction request received: ' + self.data)
 
                             # Update the server status to allow buyers
-                            lock = threading.Lock()
-                            with lock:
-                                status.SERVER_STATUS = status.ServerStatus.WAITING_FOR_BUYER
+                            status.set_server_status(status.ServerStatus.WAITING_FOR_BUYER)
+                                
+                            self.send_msg('Waiting for buyers...\r\n')
                         except ValueError:
                             self.send_msg('Server: invalid auction request.')
                     else:

@@ -1,17 +1,11 @@
-from enum import Enum
 import socket
 import sys
 import threading
 
+from auction import get_auction
 from buyer import Buyer
 from seller import Seller
-from status import ServerStatus, SERVER_STATUS
-
-
-class ClientType(Enum):
-    SELLER = 0
-    BUYER = 1
-
+from status import lock, ServerStatus, get_server_status
 
 
 host = ''
@@ -30,7 +24,6 @@ except ValueError:
 class ConnectionThread(threading.Thread):
     def __init__(self, host, port):
         super(ConnectionThread, self).__init__()
-        self.status = ServerStatus.WAITING_FOR_SELLER
 
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -52,13 +45,26 @@ class ConnectionThread(threading.Thread):
 
                 if self.seller:
                     # There's already a Seller thread
-                    if SERVER_STATUS == ServerStatus.WAITING_FOR_SELLER:
+                    if get_server_status() == ServerStatus.WAITING_FOR_SELLER:
                         conn.sendall(b'Server busy!\r\n')
                         conn.close()
                     else:
                         c = Buyer(conn)
                         self.buyers.append(c)
                         c.start()
+
+                        if len(self.buyers) == get_auction().num_bids:
+                            # Send bidding start message to all buyers
+                            for buyer in self.buyers:
+                                buyer.send_msg('Bidding start!\r\n')
+
+                            # Notify the seller that bidding is on-going
+                            self.seller.send_msg('Bidding has started...\r\n')
+                        elif len(self.buyers) > get_auction().num_bids:
+                            c.send_msg('Bidding on-going!\r\n')
+                            c.close()
+                        else:
+                            c.send_msg('Waiting for buyers...\r\n')
                 else:
                     # No Seller thread, create one
                     c = Seller(conn)
@@ -66,18 +72,44 @@ class ConnectionThread(threading.Thread):
                     c.start() 
             except KeyboardInterrupt:
                 sys.exit()
-      
+
+
+class BiddingThread(threading.Thread):
+    def __init__(self, host, port, num_bids):
+        super(BiddingThread, self).__init__()
+        self.num_bids = num_bids
+
+        try:
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.s.bind((host, port))
+            self.s.listen(num_bids)
+        except socket.error:
+            print('Failed to create bidding socket')
+            sys.exit()
+
+        self.bids = []
+        self.buyers = []
+
+    def run(self):
+        while True:
+            try:
+                conn, address = self.s.accept()
+                c = Buyer(conn)
+                self.buyers.append(c)
+                c.start()
+
+                if len(self.buyers) == self.num_bids:
+                    # Send bidding start message to all buyers
+                    for buyer in self.buyers:
+                        buyer.sendmsg('Bidding start!\r\n')
+                else:
+                    c.sendmsg('Waiting for buyers...\r\n')
+            except KeyboardInterrupt:
+                sys.exit()
 
 def main():
     get_conns = ConnectionThread(host, port)
     get_conns.start()
-    # while True:
-    #     try:
-    #         response = raw_input() 
-    #         for c in get_conns.clients:
-    #             c.send_msg(response + u'\r\n')
-    #     except KeyboardInterrupt:
-    #         sys.exit()
 
 if __name__ == '__main__':
     main()

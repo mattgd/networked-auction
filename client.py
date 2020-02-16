@@ -12,9 +12,6 @@ class Client(threading.Thread):
         # Send client connection message
         self.send_msg('Connected to the Auctioneer server.\r\n')
 
-        # Send the client their role
-        self.send_msg('Your role is: [Seller]\r\n')
-
     def send_msg(self, msg):
         self.conn.send(msg.encode())
 
