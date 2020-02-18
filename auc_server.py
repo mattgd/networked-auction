@@ -22,6 +22,7 @@ lock = threading.Lock()  # Lock for syncing operations
 #                 Auction              #
 ########################################
 CURRENT_AUCTION = None
+SELLER = None
 
 
 class Auction:
@@ -39,11 +40,11 @@ class Auction:
         return len(self.bids) == self.num_bids
 
     def get_winning_bid(self):
-        sorted_bids = sorted(self.bids, key=lambda x: x[1])
+        sorted_bids = sorted(self.bids, key=lambda x: x[1], reverse=True)
         winning_bid = None
 
         if self.auction_type == 2:
-            winning_bid = sorted_bids[1]
+            winning_bid = (sorted_bids[0][0], sorted_bids[1][1])
         else:
             winning_bid = sorted_bids[0]
 
@@ -123,15 +124,18 @@ class Seller(Client):
         self.send_msg('Please submit auction request:\n')
 
         while True:
-            self.data = self.data + self.conn.recv(1024).decode('utf-8')
+            try:
+                self.data = self.data + self.conn.recv(1024).decode('utf-8')
 
-            if self.data.endswith('\n'):
-                # Handle auction request
-                if SERVER_STATUS == ServerStatus.WAITING_FOR_SELLER:
-                    auction_request = self.data.strip().split(',')
+                if self.data.endswith('\n'):
+                    # Handle auction request
+                    if SERVER_STATUS == ServerStatus.WAITING_FOR_SELLER:
+                        auction_request = self.data.strip().split(',')
 
-                    if len(auction_request) >= 4:
                         try:
+                            if len(auction_request) < 4:
+                                raise ValueError('Missing auction parameters')
+
                             auction_type = int(auction_request[0])
                             if auction_type not in {1, 2}:
                                 raise ValueError('Auction type must be 1 for first-price or 2 for second-price')
@@ -163,13 +167,13 @@ class Seller(Client):
 
                             self.send_msg('Waiting for buyers...\n')
                         except ValueError:
-                            self.send_msg('Server: invalid auction request.')
+                            self.send_msg('Server: invalid auction request.\n')
                     else:
-                        self.send_msg('Server: invalid auction request.\n')
-                else:
-                    self.send_msg('Waiting for buyers...\n')
+                        self.send_msg('Waiting for buyers...\n')
 
-                self.data = ''
+                    self.data = ''
+            except OSError:
+                break
 
 
 ########################################
@@ -213,14 +217,17 @@ class Buyer(Client):
 #            Bidding Thread            #
 ########################################
 class BiddingThread(threading.Thread):
-    def __init__(self, seller, buyers):
+    def __init__(self, buyers):
         super(BiddingThread, self).__init__()
-        self.seller = seller
         self.buyers = buyers
 
     def run(self):
+        print('Bidding thread spawned')
+
+        global SELLER
+
         # Notify the seller that bidding is on-going
-        self.seller.send_msg('Bidding has started...\n')
+        SELLER.send_msg('Bidding has started...\n')
 
         # Send bidding start message to all buyers
         for buyer in self.buyers:
@@ -240,11 +247,11 @@ class BiddingThread(threading.Thread):
 
                 # Notify winner, if there is one
                 if winning_bidder_id is None:
-                    self.seller.send_msg(
-                        'Unfortunately, theitem was not sold in the auction.\n'
+                    SELLER.send_msg(
+                        'Unfortunately, the item was not sold in the auction.\n'
                     )
                 else:
-                    self.seller.send_msg('The item {} sold for ${}.\n'.format(
+                    SELLER.send_msg('The item {} sold for ${}.\n'.format(
                         auction.item_name, winning_bid
                     ))
 
@@ -255,7 +262,8 @@ class BiddingThread(threading.Thread):
                     winning_buyer.close()
 
                 # Close seller connection
-                self.seller.close()
+                SELLER.close()
+                SELLER = None
 
                 # Done now, reset auction and exit thread
                 set_auction(None)
@@ -279,16 +287,19 @@ class ConnectionThread(threading.Thread):
             print('Failed to create socket')
             sys.exit()
 
-        self.seller = None
         self.buyers = []
 
     def run(self):
+        global SELLER
+
         while True:
             try:
                 conn, address = self.s.accept()
                 c = None
 
-                if self.seller:
+                auction = get_auction()  # Get the current auction
+
+                if SELLER:
                     # There's already a Seller thread
                     if get_server_status() == ServerStatus.WAITING_FOR_SELLER:
                         conn.send(b'Server busy!\n')
@@ -298,10 +309,8 @@ class ConnectionThread(threading.Thread):
                         self.buyers.append(c)
                         c.start()
 
-                        auction = get_auction()  # Get the current auction
-
                         if len(self.buyers) == auction.num_bids:
-                            bidding = BiddingThread(self.seller, self.buyers)
+                            bidding = BiddingThread(self.buyers)
                             bidding.start()
                         elif len(self.buyers) > auction.num_bids:
                             c.send_msg('Bidding on-going!\n')
@@ -311,7 +320,7 @@ class ConnectionThread(threading.Thread):
                 else:
                     # No Seller thread, create one
                     c = Seller(conn)
-                    self.seller = c
+                    SELLER = c
                     c.start()
             except (KeyboardInterrupt, socket.error):
                 sys.exit()

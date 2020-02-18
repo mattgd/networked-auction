@@ -10,7 +10,8 @@ CONNECTION_CLOSE_MSGS = [
 PROMPT_MSGS = [
     'Please submit auction request:\n',
     'Server: invalid auction request.\n',
-    'Bidding start!\n'
+    'Bidding start!\n',
+    'Invalid bid. Please submit a positive integer!\n'
 ]
 
 if len(sys.argv) < 3:
