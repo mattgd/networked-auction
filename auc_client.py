@@ -3,8 +3,14 @@ import sys
 
 
 CONNECTION_CLOSE_MSGS = [
-    'Server busy!\r\n'
-    'Bidding on-going!\r\n'
+    'Server busy!\n'
+    'Bidding on-going!\n'
+]
+
+PROMPT_MSGS = [
+    'Please submit auction request:\n',
+    'Server: invalid auction request.\n',
+    'Bidding start!\n'
 ]
 
 if len(sys.argv) < 3:
@@ -28,16 +34,18 @@ data = ''
 while True:
     data = client_socket.recv(1024)
 
-    if data.endswith(b'\r\n'):
+    if not len(data):
+        break
+    elif data.endswith(b'\n'):
         print(data.decode('utf-8'))
 
         if any(data.endswith(msg.encode()) for msg in CONNECTION_CLOSE_MSGS):
             break
-        elif data.endswith(b'Please submit auction request:\r\n') or data.endswith(b'Server: invalid auction request.\r\n'):
-            auction_request = input()
+        elif any(data.endswith(msg.encode()) for msg in PROMPT_MSGS):
+            input_data = input()
 
             # Send message over the socket
-            client_socket.send((auction_request + '\r\n').encode())
+            client_socket.send((input_data + '\n').encode())
 
         data = ''
 
