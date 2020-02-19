@@ -6,6 +6,7 @@ import threading
 
 host = ''
 
+# Get the port on which to run the server socket
 if len(sys.argv) < 2:
     print('Please specify a port for the auctioneer server.')
     sys.exit()
@@ -21,8 +22,8 @@ lock = threading.Lock()  # Lock for syncing operations
 ########################################
 #                 Auction              #
 ########################################
-CURRENT_AUCTION = None
-SELLER = None
+CURRENT_AUCTION = None  # Global state for current auction
+SELLER = None  # Global status for single seller
 
 
 class Auction:
@@ -40,6 +41,11 @@ class Auction:
         return len(self.bids) == self.num_bids
 
     def get_winning_bid(self):
+        """
+        Decides which bidder wins the auction based on the auction type and bids.
+        :returns: a tuple with the winning bidder ID and bid, or (None, None) if
+        there was no winner.
+        """
         sorted_bids = sorted(self.bids, key=lambda x: x[1], reverse=True)
         winning_bid = None
 
@@ -56,11 +62,13 @@ class Auction:
 
 
 def get_auction():
+    """Synchronously gets and returns the current auction."""
     with lock:
         return CURRENT_AUCTION
 
 
 def set_auction(auction):
+    """Synchronously sets the current auction."""
     with lock:
         global CURRENT_AUCTION
         CURRENT_AUCTION = auction
@@ -78,11 +86,13 @@ SERVER_STATUS = ServerStatus.WAITING_FOR_SELLER
 
 
 def get_server_status():
+    """Synchronously gets and returns the server status."""
     with lock:
         return SERVER_STATUS
 
 
 def set_server_status(status):
+    """Synchronously sets the server status."""
     print('Setting server status to ' + status.name)
     with lock:
         global SERVER_STATUS
@@ -94,6 +104,7 @@ def set_server_status(status):
 #                 Client               #
 ########################################
 class Client(threading.Thread):
+    """Parent class for a client thread."""
     def __init__(self, conn):
         super(Client, self).__init__()
         self.conn = conn
@@ -116,6 +127,7 @@ class Client(threading.Thread):
 #                 Seller               #
 ########################################
 class Seller(Client):
+    """Client subclass for a Seller to manage seller operations."""
     def run(self):
         super().run()
 
@@ -132,6 +144,7 @@ class Seller(Client):
                     if SERVER_STATUS == ServerStatus.WAITING_FOR_SELLER:
                         auction_request = self.data.strip().split(',')
 
+                        # Validate auction request
                         try:
                             if len(auction_request) < 4:
                                 raise ValueError('Missing auction parameters')
@@ -152,6 +165,7 @@ class Seller(Client):
                             if len(auction_item_name) > 255:
                                 raise ValueError('Item name is longer than 255 characters')
 
+                            # Auction request valid, start the auction
                             set_auction(
                                 Auction(
                                     auction_type=auction_type,
@@ -180,6 +194,7 @@ class Seller(Client):
 #                  Buyer               #
 ########################################
 class Buyer(Client):
+    """Client subclass to manage buyer operations."""
     def __init__(self, conn, bidder_id):
         super(Buyer, self).__init__(conn)
         self.bidder_id = bidder_id
@@ -217,6 +232,7 @@ class Buyer(Client):
 #            Bidding Thread            #
 ########################################
 class BiddingThread(threading.Thread):
+    """Thread subclass to manage bidding activity."""
     def __init__(self, buyers):
         super(BiddingThread, self).__init__()
         self.buyers = buyers
@@ -275,6 +291,7 @@ class BiddingThread(threading.Thread):
 #      Connection/Welcoming Thread     #
 ########################################
 class ConnectionThread(threading.Thread):
+    """Connection/welcoming thread subclass with server socket."""
     def __init__(self, host, port):
         super(ConnectionThread, self).__init__()
 
@@ -302,23 +319,28 @@ class ConnectionThread(threading.Thread):
                 if SELLER:
                     # There's already a Seller thread
                     if get_server_status() == ServerStatus.WAITING_FOR_SELLER:
+                        # Need to wait until an auction request goes through
                         conn.send(b'Server busy!\n')
                         conn.close()
                     else:
+                        # Auction pending, accept buyers
                         c = Buyer(conn, bidder_id=len(self.buyers))
                         self.buyers.append(c)
                         c.start()
 
                         if len(self.buyers) == auction.num_bids:
+                            # Send all buyers to be managed by BiddingThread
                             bidding = BiddingThread(self.buyers)
                             bidding.start()
                         elif len(self.buyers) > auction.num_bids:
+                            # Currently bidding, don't allow anyone else
                             c.send_msg('Bidding on-going!\n')
                             c.close()
                         else:
+                            # Waiting for buyers to connect
                             c.send_msg('Waiting for buyers...\n')
                 else:
-                    # No Seller thread, create one
+                    # No Seller thread, create one for first client
                     c = Seller(conn)
                     SELLER = c
                     c.start()
@@ -327,6 +349,7 @@ class ConnectionThread(threading.Thread):
 
 
 def main():
+    # Start the connection thread
     get_conns = ConnectionThread(host, port)
     get_conns.start()
 
