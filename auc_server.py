@@ -1,3 +1,4 @@
+# Author: Matt Dzwonczyk (mgdzwonc)
 from enum import IntEnum
 import socket
 import sys
@@ -128,6 +129,10 @@ class Client(threading.Thread):
 ########################################
 class Seller(Client):
     """Client subclass for a Seller to manage seller operations."""
+    def __init__(self, conn):
+        super(Seller, self).__init__(conn)
+        self.is_auctioning = True
+
     def run(self):
         super().run()
 
@@ -135,7 +140,7 @@ class Seller(Client):
         self.send_msg('Your role is: [Seller]\n')
         self.send_msg('Please submit auction request:\n')
 
-        while True:
+        while self.is_auctioning:
             try:
                 self.data = self.data + self.conn.recv(1024).decode('utf-8')
 
@@ -278,6 +283,7 @@ class BiddingThread(threading.Thread):
                     winning_buyer.close()
 
                 # Close seller connection
+                SELLER.is_auctioning = False
                 SELLER.close()
                 SELLER = None
 
@@ -332,6 +338,7 @@ class ConnectionThread(threading.Thread):
                             # Send all buyers to be managed by BiddingThread
                             bidding = BiddingThread(self.buyers)
                             bidding.start()
+                            self.buyers = []  # Don't need buyers anymore
                         elif len(self.buyers) > auction.num_bids:
                             # Currently bidding, don't allow anyone else
                             c.send_msg('Bidding on-going!\n')

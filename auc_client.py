@@ -1,3 +1,4 @@
+# Author: Matt Dzwonczyk (mgdzwonc)
 import socket
 import sys
 
