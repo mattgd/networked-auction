@@ -1,4 +1,5 @@
 # Author: Matt Dzwonczyk (mgdzwonc)
+# Last modified: 2020-02-20
 from enum import IntEnum
 import socket
 import sys
